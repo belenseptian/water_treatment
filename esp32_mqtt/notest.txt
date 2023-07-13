@@ -1,0 +1,12 @@
+#include <ArduinoJson.h>
+
+StaticJsonBuffer<200> jsonBuffer;
+JsonObject& root = jsonBuffer.createObject();
+char JSONmessageBuffer[200];
+
+root["ESP32 ID"] = temp1;// Chip
+root["Sensor Reading: "] = sensorValue_1;
+
+root.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+Serial.println(JSONmessageBuffer);
+client.publish("room/db", JSONmessageBuffer);
