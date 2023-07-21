@@ -7,6 +7,9 @@ int16_t val1[4] = { 0, 0, 0, 0 };
 int     idx = 0;
 uint32_t lastTime = 0;
 
+/* TDS (PPM) */
+float temperature = 25,tdsValue = 0,kValue = 1.0,ecValue,ecValue25;
+
 /* Classes */
 ADS1115 ADS0(0x49);
 ADS1115 ADS1(0x48);
@@ -24,6 +27,7 @@ void loop() {
 
   //read adc values here...
   Serial.println(ADS1.toVoltage(val1[3]));
+  Serial.println(getPPMValue(ADS1.toVoltage(val1[3])));
   
   delay(1000);
   //request all the adc values
