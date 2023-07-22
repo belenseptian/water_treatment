@@ -60,3 +60,8 @@ void ADS_print_all()
   }
   Serial.println();
 }
+
+float adcVoltage(int index)
+{
+  return ADS1.toVoltage(val1[index]);
+}

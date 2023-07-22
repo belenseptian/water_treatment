@@ -1,14 +1,25 @@
 /* Libraries */
 #include "ADS1X15.h"
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <WiFiClientSecure.h>
+
+/* Constants */
+#define temperature 30.19
+#define kValue 0.81
+#define tdsFactor 0.5
 
 /* ADC */
 int16_t val0[4] = { 0, 0, 0, 0 };
 int16_t val1[4] = { 0, 0, 0, 0 };
-int     idx = 0;
+int idx = 0;
 uint32_t lastTime = 0;
 
 /* TDS (PPM) */
-float temperature = 25,tdsValue = 0,kValue = 1.0,ecValue,ecValue25;
+float ecValue,ecValue25,tdsValue,KValueTemp,rawECsolution;
+
+/* Millis */
+long now = millis(),lastMeasure = 0;
 
 /* Classes */
 ADS1115 ADS0(0x49);
@@ -21,16 +32,14 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  // wait until all the adc values are read
   while (ADS_read_all());
-
-  //read adc values here...
-  Serial.println(ADS1.toVoltage(val1[3]));
-  Serial.println(getPPMValue(ADS1.toVoltage(val1[3])));
-  
-  delay(1000);
+  now = millis();
+  if (now - lastMeasure > 1000) {
+    lastMeasure = now;
+    //  PHCalibration(7, 9, 1.85, 1.5);
+    Serial.println(getPPMValue(adcVoltage(3), temperature));  
+    Serial.println(getPH(adcVoltage(2)));
+  }
   //request all the adc values
   ADS_request_all();
-
 }
