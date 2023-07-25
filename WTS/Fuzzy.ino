@@ -119,6 +119,8 @@ float fuzzyOut(float ppm, float ph)
 {
   fuzzy->setInput(1, ph);
   fuzzy->setInput(2, ppm);
+
+  fuzzy->fuzzify();
   float output1 = fuzzy->defuzzify(1);
 
   return output1;
