@@ -1,16 +1,24 @@
-#include <ArduinoJson.h>
-#include <ArduinoJson.hpp>
-
 /* Libraries */
 #include "ADS1X15.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <WiFiClientSecure.h>
+#include <ArduinoJson.h>
+#include <EEPROM.h>
+#include <Fuzzy.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 /* Constants */
 #define temperature 30.19
 #define kValue 0.81
 #define tdsFactor 0.5
+#define EEPROM_SIZE 12
+#define EEPROM_Address 1
+#define ONE_WIRE_BUS 15
+#define pump 32
+#define pump_low 5000
+#define pump_high 10000
 
 /* ADC */
 int16_t val0[4] = { 0, 0, 0, 0 };
@@ -18,17 +26,16 @@ int16_t val1[4] = { 0, 0, 0, 0 };
 int idx = 0;
 uint32_t lastTime = 0;
 
-// WiFi
-const char *ssid = "TKJ OK";         // Enter your WiFi name
-const char *password = "12345@TKJOK";  // Enter WiFi password
+/* WiFi */
+const char *ssid = "robot";         // Enter your WiFi name
+const char *password = "umdprobot";  // Enter WiFi password
 
-// MQTT Broker
+/* MQTT Broker */
 const char *mqtt_broker = "o2cd700d.ala.us-east-1.emqxsl.com";  // broker address
 const char *topic = "room/lamp";                                // define topic
 const char *mqtt_username = "alam";                             // username for authentication
 const char *mqtt_password = "Qwert1234";                        // password for authentication
 const int mqtt_port = 8883;                                     // port of MQTT over TLS/SSL
-
 // load DigiCert Global Root CA ca_cert
 const char *ca_cert =
   "-----BEGIN CERTIFICATE-----\n"
@@ -54,90 +61,70 @@ const char *ca_cert =
   "CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4="
   "-----END CERTIFICATE-----\n";
 
-// init secure wifi client
-WiFiClientSecure espClient;
-// use wifi client to init mqtt client
-PubSubClient client(espClient);
-
-StaticJsonBuffer<200> jsonBuffer;
-JsonObject &root = jsonBuffer.createObject();
+/* JSON */
 char JSONmessageBuffer[200];
+
 /* TDS (PPM) */
 float ecValue, ecValue25, tdsValue, KValueTemp, rawECsolution;
 
+/* PH */
+int raw_adc;
+
+/* EEPROM */
+float read_data;
+
 /* Millis */
 long now = millis(), lastMeasure = 0;
+long now_ = millis(), lastMeasure_ = 0;
+long now__ = millis(), lastMeasure__ = 0;
+
+/* Timer Setup */
+hw_timer_t * disp_timer = NULL;
+
+/* Fuzzy */
+// FuzzyInput PH Sensor
+FuzzySet *phfair = new FuzzySet(5.5, 6, 6, 7);
+FuzzySet *phgood = new FuzzySet(6.5, 7, 8, 8.5);
+FuzzySet *phbad = new FuzzySet(8, 8.5, 8.5, 10.5);
+// FuzzyInput TDS
+FuzzySet *excellent = new FuzzySet(0, 110, 110, 120);
+FuzzySet *good = new FuzzySet(110, 120, 210, 220);
+FuzzySet *fair = new FuzzySet(210, 220, 220, 320);
+// FuzzyOutput Water Quality
+FuzzySet *bad = new FuzzySet(0, 30, 30, 33);
+FuzzySet *medium = new FuzzySet(30, 33, 60, 66);
+FuzzySet *wqgood = new FuzzySet(60, 66, 66, 99);
+
+int pump_status = 0;
 
 /* Classes */
 ADS1115 ADS0(0x49);
 ADS1115 ADS1(0x48);
-
-void callback(char *topic, byte *payload, unsigned int length)
-{
-    Serial.print("Message arrived in topic: ");
-    Serial.println(topic);
-    Serial.print("Message:");
-    String messageTemp, topic_;
-    topic_ = topic;
-
-    for (int i = 0; i < length; i++)
-    {
-        Serial.print((char)payload[i]);
-        messageTemp += (char)payload[i];
-    }
-    Serial.println();
-    Serial.println("-----------------------");
-
-    if (topic_ == "room/lamp")
-    {
-        // Add your logic here for processing the message for the topic "room/lamp"
-        // For example, you can uncomment the code below and customize it as needed.
-        /*
-        if (messageTemp == "on")
-            digitalWrite(led_pin, HIGH);
-        else
-            digitalWrite(led_pin, LOW);
-        */
-    }
-}
-
-void reconnect() {
-  while (!client.connected()) {
-    String client_id = "esp32-client-";
-    client_id += String(WiFi.macAddress());
-    Serial.printf("The client %s connects to the public mqtt broker\n", client_id.c_str());
-    if (client.connect(client_id.c_str(), mqtt_username, mqtt_password)) {
-      Serial.println("Public emqx mqtt broker connected");
-    } else {
-      Serial.print("Failed to connect to MQTT broker, rc=");
-      Serial.print(client.state());
-      Serial.println("Retrying in 5 seconds.");
-      delay(5000);
-    }
-  }
-}
+// init secure wifi client
+WiFiClientSecure espClient;
+// use wifi client to init mqtt client
+PubSubClient client(espClient);
+// init JSON library
+StaticJsonBuffer<200> jsonBuffer;
+JsonObject &root = jsonBuffer.createObject();
+Fuzzy *fuzzy = new Fuzzy();
+// Setup a oneWire instance to communicate with any OneWire devices
+OneWire oneWire(ONE_WIRE_BUS);
+// Pass our oneWire reference to Dallas Temperature sensor 
+DallasTemperature sensors(&oneWire);
 
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
-  // connecting to a WiFi network
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.println("Connecting to WiFi..");
-  }
-  Serial.println("Connected to the WiFi network");
-
-  // set root ca cert
-  espClient.setCACert(ca_cert);
-  // connecting to a mqtt broker
-  client.setServer(mqtt_broker, mqtt_port);
-  client.setCallback(callback);
-  reconnect();
-
-  // subscribe
-  client.subscribe(topic);  // subscribe from the topic
+  //Init EEPROM
+  EEPROM.begin(EEPROM_SIZE);
+  //Init WiFi
+  initWifi();
+  initMQTT();
   initADC();
+  initFuzzy();
+  sensors.begin();
+  pinMode(pump, OUTPUT);
 }
 
 void loop() {
@@ -146,26 +133,34 @@ void loop() {
   }
   client.loop();
 
-  while (ADS_read_all())
-    ;
+  while (ADS_read_all());
   now = millis();
   if (now - lastMeasure > 1000) {
     lastMeasure = now;
     
-    //  PHCalibration(7, 9, 1.85, 1.5);
-    // Serial.println(getPPMValue(adcVoltage(3), temperature));
-    // Serial.println(getPH(adcVoltage(2)));
+//    PHCalibration(7, 9, 1.85, 1.5);
+//    Serial.println(getPPMValue(adcVoltage(3), temperature));
+//    Serial.println(getPH(adcVoltage(2)));
+    
+//    EEPROM.writeFloat(EEPROM_Address, getPHOffset(val1[1]));//EEPROM.put(address, param);
+//    EEPROM.commit();
+//    read_data = EEPROM.readFloat(EEPROM_Address);
+//    Serial.println(read_data);
+
+//    Serial.println(getTemp());
+
+//    Serial.println(fuzzyOut(getPPMValue(adcVoltage(3), temperature), getPH(adcVoltage(2))-savePHOffset(getPHOffset(val1[1]))));
+    
     Serial.print(F("PPM = "));
     float ppm1 = random(10);
     float ppm2 = random(10);
-    Serial.println(getPPMValue(ppm1, ppm2));
+    Serial.println(getPPMValue(adcVoltage(3), getTemp()));
     float PPMValue = getPPMValue(ppm1, ppm2); 
     client.publish("wts/tds", String(PPMValue).c_str());
 
-
     Serial.print(F("PH = "));
     float ph = random(10);
-    Serial.println(getPH(ph));
+    Serial.println(getPH(adcVoltage(2))-savePHOffset(getPHOffset(val1[1])));
     float phValue = getPH(ph); 
     client.publish("wts/ph", String(phValue).c_str());
 
@@ -174,8 +169,19 @@ void loop() {
     root.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
     Serial.println(JSONmessageBuffer);
     client.publish("wts/db", JSONmessageBuffer);
-
   }
   //request all the adc values
   ADS_request_all();
+
+  now_ = millis();
+  if (now_ - lastMeasure_ > 5000) {
+    lastMeasure_ = now_;
+    digitalWrite(pump,LOW);
+  }  
+  
+  now__ = millis();
+  if (now__ - lastMeasure__ > 10000) {
+    lastMeasure__ = now__;
+    digitalWrite(pump,HIGH);
+  }
 }

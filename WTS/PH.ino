@@ -15,3 +15,32 @@ float getPH(float voltage)
 
   return y;
 }
+
+float getPHOffset(int adc)
+{
+  float mapping;
+  raw_adc = map(adc, 0, 17555, 0, 210);
+  if(raw_adc <= 10)
+  {
+    mapping = 0;
+  }
+  else if(raw_adc >= 11 && raw_adc <= 100)
+  {
+    mapping = (raw_adc - 100)/20;
+  }
+  else
+  {
+    mapping = (raw_adc - 100)/20;
+  }
+
+  return mapping;
+}
+
+float savePHOffset(float offset)
+{
+  EEPROM.writeFloat(EEPROM_Address, offset);//EEPROM.put(address, param);
+  EEPROM.commit();
+  float read_data = EEPROM.readFloat(EEPROM_Address);
+
+  return read_data;
+}
