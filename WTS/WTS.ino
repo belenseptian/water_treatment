@@ -27,8 +27,8 @@ int idx = 0;
 uint32_t lastTime = 0;
 
 /* WiFi */
-const char *ssid = "robot";         // Enter your WiFi name
-const char *password = "umdprobot";  // Enter WiFi password
+const char *ssid = "TKJ OK";         // Enter your WiFi name
+const char *password = "12345@TKJOK";  // Enter WiFi password
 
 /* MQTT Broker */
 const char *mqtt_broker = "o2cd700d.ala.us-east-1.emqxsl.com";  // broker address
@@ -152,23 +152,32 @@ void loop() {
 //    Serial.println(fuzzyOut(getPPMValue(adcVoltage(3), temperature), getPH(adcVoltage(2))-savePHOffset(getPHOffset(val1[1]))));
     
     Serial.print(F("PPM = "));
-    float ppm1 = random(10);
-    float ppm2 = random(10);
     Serial.println(getPPMValue(adcVoltage(3), getTemp()));
-    float PPMValue = getPPMValue(ppm1, ppm2); 
-    client.publish("wts/tds", String(PPMValue).c_str());
+    float PPMValue = getPPMValue(adcVoltage(3), getTemp()); 
+    client.publish("sensor/tds", String(PPMValue).c_str());
 
     Serial.print(F("PH = "));
-    float ph = random(10);
     Serial.println(getPH(adcVoltage(2))-savePHOffset(getPHOffset(val1[1])));
-    float phValue = getPH(ph); 
-    client.publish("wts/ph", String(phValue).c_str());
+    float phValue = getPH(adcVoltage(2))-savePHOffset(getPHOffset(val1[1])); 
+    client.publish("sensor/ph", String(phValue).c_str());
 
-    root["ppm"] = getPPMValue(ppm1, ppm2);
-    root["ph"]  = getPH(ph);
+    Serial.print(F("TEMP = "));
+    Serial.println(getTemp());
+    float tmpValue = getTemp(); 
+    client.publish("sensor/temperature", String(tmpValue).c_str());
+
+    Serial.print(F("QUALITY = "));
+    Serial.println(fuzzyOut(getPPMValue(adcVoltage(3), temperature), getPH(adcVoltage(2))-savePHOffset(getPHOffset(val1[1]))));
+    float fuzzyValue = fuzzyOut(getPPMValue(adcVoltage(3), temperature), getPH(adcVoltage(2))-savePHOffset(getPHOffset(val1[1]))); 
+    client.publish("sensor/quality", String(fuzzyValue).c_str());
+
+    root["tds"] = getPPMValue(adcVoltage(3), getTemp());
+    root["ph"]  = getPH(adcVoltage(2))-savePHOffset(getPHOffset(val1[1]));
+    root["temperature"]  = getTemp();
+    root["quality"]  = fuzzyOut(getPPMValue(adcVoltage(3), temperature), getPH(adcVoltage(2))-savePHOffset(getPHOffset(val1[1])));
     root.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
     Serial.println(JSONmessageBuffer);
-    client.publish("wts/db", JSONmessageBuffer);
+    client.publish("sensor/db", JSONmessageBuffer);
   }
   //request all the adc values
   ADS_request_all();
